@@ -101,8 +101,40 @@ def _walk_forward_baseline(feat, m1, feature_cols, policy_fn, label):
     return pd.DataFrame(rows)
 
 
-def main():
-    out_dir = Path("outputs")
+def parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Exécution du pipeline avec support d'instruments personnalisés via options CLI."
+    )
+    parser.add_argument("--symbol", "-s", default=None, help="Symbole de l'instrument (ex. BTC/USDT, ETH/USDT, XAUUSD)")
+    parser.add_argument("--csv", "-c", default=None, help="Chemin vers le fichier CSV de bougies 1m")
+    parser.add_argument("--is-crypto", action="store_true", help="Active le calendrier de trading 24/7 pour crypto")
+    parser.add_argument("--time-col", default=None, help="Nom de la colonne temporelle dans le CSV")
+    parser.add_argument("--source-tz", default=None, help="Fuseau horaire d'origine (ex: UTC ou Europe/Helsinki)")
+    parser.add_argument("--decision-tf", default=None, help="Timeframe de décision (ex: 5min, 15min, H1)")
+    parser.add_argument("--out-dir", "-o", default="outputs", help="Répertoire de sortie des résultats")
+    return parser.parse_args()
+
+
+def main(args=None):
+    if args is None:
+        args = parse_args()
+
+    # Application des options CLI à la configuration globale
+    if getattr(args, "symbol", None):
+        CFG.symbol = args.symbol
+    if getattr(args, "csv", None):
+        CFG.csv_path = Path(args.csv)
+    if getattr(args, "is_crypto", False):
+        CFG.is_crypto_24_7 = True
+    if getattr(args, "time_col", None):
+        CFG.time_col = args.time_col
+    if getattr(args, "source_tz", None):
+        CFG.source_tz = args.source_tz
+    if getattr(args, "decision_tf", None):
+        CFG.decision_timeframe = args.decision_tf
+
+    out_dir = Path(getattr(args, "out_dir", "outputs"))
     out_dir.mkdir(exist_ok=True)
 
     print("Loading M1 data...")

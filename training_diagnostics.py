@@ -467,5 +467,32 @@ def run_diagnostics(models_dir: str = "models", reveal_test: bool = False) -> No
     print(sep)
 
 
+def parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Diagnostics d'entraînement PPO avec support des options CLI pour instruments personnalisés."
+    )
+    parser.add_argument("--models-dir", "-m", default="models", help="Répertoire contenant les modèles entraînés")
+    parser.add_argument("--symbol", "-s", default=None, help="Symbole de l'instrument")
+    parser.add_argument("--csv", "-c", default=None, help="Chemin vers le fichier CSV de bougies 1m")
+    parser.add_argument("--is-crypto", action="store_true", help="Active le calendrier de trading 24/7 pour crypto")
+    parser.add_argument("--time-col", default=None, help="Nom de la colonne temporelle dans le CSV")
+    parser.add_argument("--source-tz", default=None, help="Fuseau horaire d'origine")
+    parser.add_argument("--reveal-test", action="store_true", help="Révéler les diagnostics sur le test holdout")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    run_diagnostics()
+    args = parse_args()
+    if args.symbol:
+        CFG.symbol = args.symbol
+    if args.csv:
+        CFG.csv_path = Path(args.csv)
+    if args.is_crypto:
+        CFG.is_crypto_24_7 = True
+    if args.time_col:
+        CFG.time_col = args.time_col
+    if args.source_tz:
+        CFG.source_tz = args.source_tz
+
+    run_diagnostics(models_dir=args.models_dir, reveal_test=args.reveal_test)

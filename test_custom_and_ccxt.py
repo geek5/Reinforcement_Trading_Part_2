@@ -165,3 +165,58 @@ def test_plot_learning_curve(tmp_path: Path):
 
     resolved = resolve_evals_path(tmp_path, explicit_file=str(csv_path))
     assert resolved == csv_path
+
+
+def test_cli_parsing_and_model_slug():
+    from train_ppo import parse_args as parse_train_args
+    from run_pipeline import parse_args as parse_pipeline_args
+    from training_diagnostics import parse_args as parse_diag_args
+    import sys
+
+    # Test train_ppo CLI parsing
+    orig_argv = sys.argv
+    try:
+        sys.argv = [
+            "train_ppo.py",
+            "--symbol", "ETH/USDT",
+            "--csv", "data/eth.csv",
+            "--is-crypto",
+            "--time-col", "Time",
+            "--source-tz", "UTC",
+            "--decision-tf", "15min",
+            "--model-name", "MyBestAgent",
+            "--mode", "single",
+        ]
+        args = parse_train_args()
+        assert args.symbol == "ETH/USDT"
+        assert args.csv == "data/eth.csv"
+        assert args.is_crypto is True
+        assert args.time_col == "Time"
+        assert args.source_tz == "UTC"
+        assert args.decision_tf == "15min"
+        assert args.model_name == "MyBestAgent"
+        assert args.mode == "single"
+
+        # Test run_pipeline CLI parsing
+        sys.argv = [
+            "run_pipeline.py",
+            "--symbol", "SOL/USDT",
+            "--is-crypto",
+            "--decision-tf", "5min",
+        ]
+        p_args = parse_pipeline_args()
+        assert p_args.symbol == "SOL/USDT"
+        assert p_args.is_crypto is True
+        assert p_args.decision_tf == "5min"
+
+        # Test training_diagnostics CLI parsing
+        sys.argv = [
+            "training_diagnostics.py",
+            "--models-dir", "custom_models",
+            "--symbol", "BTC/USDT",
+        ]
+        d_args = parse_diag_args()
+        assert d_args.models_dir == "custom_models"
+        assert d_args.symbol == "BTC/USDT"
+    finally:
+        sys.argv = orig_argv

@@ -288,8 +288,12 @@ def _slug(
 
 def _parse() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Visualise a time slice of saved simulation results."
+        description="Visualise a time slice of saved simulation results with custom instrument support."
     )
+    p.add_argument("--symbol", "-s", default=None, help="Symbole de l'instrument")
+    p.add_argument("--csv", "-c", default=None, help="Chemin vers le fichier CSV de bougies 1m")
+    p.add_argument("--time-col", default=None, help="Nom de la colonne temporelle")
+    p.add_argument("--source-tz", default=None, help="Fuseau horaire d'origine")
     p.add_argument("--start",      default=None, help="Start date e.g. 2024-01-01")
     p.add_argument("--end",        default=None, help="End date   e.g. 2024-06-01")
     p.add_argument("--bars",       default=None, type=int,
@@ -307,6 +311,15 @@ def _parse() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = _parse()
+    if args.symbol:
+        CFG.symbol = args.symbol
+    if args.csv:
+        CFG.csv_path = Path(args.csv)
+    if args.time_col:
+        CFG.time_col = args.time_col
+    if args.source_tz:
+        CFG.source_tz = args.source_tz
+
     view_slice(
         start=args.start,
         end=args.end,

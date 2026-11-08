@@ -301,32 +301,15 @@ def _linear_schedule(initial_value: float):
 
 def train(
     total_timesteps: int = 2_000_000,
-    # ── timesteps ────────────────────────────────────────────────────────────
-    # Normally set by the caller. train_walk_forward() scales this PER FOLD by
-    # the fold's train length so every fold makes a similar number of passes
-    # over its data — a fixed budget over-trains the small early folds and
-    # under-trains the large late ones. 2048-step episodes → total/2048 rollouts
-    # × n_epochs minibatch passes each.
-    # ────────────────────────────────────────────────────────────────────────
     seed: int = 42,
     out_dir: str = "models",
     train_episode_steps: int = 2048,
     eval_freq: int = 50_000,
-    # dd_penalty: reward-units subtracted per 1% of max drawdown in checkpoint
-    # selection.  Higher → prefer stabler (lower-DD) models; too high selects a
-    # near-idle policy.  Calibrate against eval_logs/consistency_evals.csv.
     dd_penalty: float = 1.0,
-    # ── Parallelism & device ─────────────────────────────────────────────────
-    # n_envs > 1 uses SubprocVecEnv: near-linear speedup because env simulation
-    # (not the network) is the bottleneck.  n_envs=4 on a quad-core CPU gives
-    # ~3.5× faster wall-clock.  Requires the __main__ guard at the bottom.
-    # device="auto" picks CUDA if available; adds ~15–30% on the network side.
-    # With n_envs=4 + GPU, effective batch per update = n_steps*n_envs = 8192
-    # → increase batch_size to 512 or 1024 for better GPU utilisation.
     n_envs: int = 1,
     device: str = "auto",
-    # ────────────────────────────────────────────────────────────────────────
     reveal_test: bool = False,
+    model_name: str | None = None,
     # Inject pre-built splits (used by train_walk_forward to train one fold).
     # When None, load the single chronological split via load_datasets().
     datasets: tuple | None = None,
@@ -464,12 +447,16 @@ def train(
 
     model.learn(total_timesteps=total_timesteps, callback=CallbackList([sync_cb, eval_cb]))
 
-    # Build a human-readable slug:  ppo_H4_sl1-1.5-2_tp1-1.5-2-3_500k_seed42
+    # Construction du slug du modèle avec nom customisé, symbole et date/heure
+    import datetime
     def _fmt(v: float) -> str:
         return str(v).rstrip("0").rstrip(".")
     sl_str = "-".join(_fmt(x) for x in CFG.sl_atr_multipliers)
     tp_str = "-".join(_fmt(x) for x in CFG.tp_r_multipliers)
-    slug = (f"ppo_{CFG.decision_timeframe}"
+    clean_sym = CFG.symbol.replace("/", "").replace(":", "-").upper()
+    now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    prefix = f"{model_name}_{clean_sym}_{now_str}" if model_name else f"ppo_{clean_sym}_{now_str}"
+    slug = (f"{prefix}_{CFG.decision_timeframe}"
             f"_sl{sl_str}_tp{tp_str}"
             f"_{total_timesteps // 1000}k_seed{seed}")
 
@@ -1091,9 +1078,59 @@ def train_sliding_walk_forward(
     return summary
 
 
+def parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Entraînement PPO avec options pour instruments personnalisés et sauvegarde customisée."
+    )
+    parser.add_argument("--symbol", "-s", default=None, help="Symbole de l'instrument (ex. BTC/USDT, ETH/USDT, XAUUSD)")
+    parser.add_argument("--csv", "-c", default=None, help="Chemin vers le fichier CSV de bougies 1m")
+    parser.add_argument("--is-crypto", action="store_true", help="Active le calendrier de trading 24/7 pour crypto")
+    parser.add_argument("--time-col", default=None, help="Nom de la colonne temporelle dans le CSV")
+    parser.add_argument("--source-tz", default=None, help="Fuseau horaire d'origine (ex: UTC ou Europe/Helsinki)")
+    parser.add_argument("--decision-tf", default=None, help="Timeframe de décision (ex: 5min, 15min, H1)")
+    parser.add_argument("--model-name", "-m", default=None, help="Nom personnalisé pour le modèle sauvegardé")
+    parser.add_argument("--mode", choices=["single", "sliding", "walk_forward"], default="sliding",
+                        help="Mode d'entraînement : single (split simple), sliding (walk-forward glissant), walk_forward (par blocs)")
+    parser.add_argument("--timesteps", type=int, default=None, help="Nombre total de timesteps")
+    parser.add_argument("--out-dir", "-o", default="models", help="Répertoire de sortie des modèles")
+    parser.add_argument("--n-envs", type=int, default=4, help="Nombre d'environnements parallèles")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    # Default entry point: sliding-window walk-forward (realistic retrain
-    # simulation; stitches a continuous out-of-sample test track record).
-    # For the block-fold scheme call train_walk_forward(); for a single
-    # chronological split call train() directly.
-    train_sliding_walk_forward()
+    args = parse_args()
+
+    # Application des options CLI sur la configuration globale CFG
+    if args.symbol:
+        CFG.symbol = args.symbol
+    if args.csv:
+        CFG.csv_path = Path(args.csv)
+    if args.is_crypto:
+        CFG.is_crypto_24_7 = True
+    if args.time_col:
+        CFG.time_col = args.time_col
+    if args.source_tz:
+        CFG.source_tz = args.source_tz
+    if args.decision_tf:
+        CFG.decision_timeframe = args.decision_tf
+
+    if args.mode == "single":
+        train(
+            total_timesteps=args.timesteps or 2_000_000,
+            out_dir=args.out_dir,
+            n_envs=args.n_envs,
+            model_name=args.model_name,
+        )
+    elif args.mode == "walk_forward":
+        train_walk_forward(
+            total_timesteps=args.timesteps or 5_000_000,
+            out_dir=args.out_dir,
+            n_envs=args.n_envs,
+        )
+    else:
+        train_sliding_walk_forward(
+            total_timesteps=args.timesteps or 3_000_000,
+            out_dir=args.out_dir,
+            n_envs=args.n_envs,
+        )
