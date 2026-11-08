@@ -17,10 +17,9 @@ _TF_TO_PANDAS: dict[str, str] = {
     "D1":  "1D",    "1d":  "1D",   "1D":    "1D",
 }
 
-# Approximate trading bars per year for XAUUSD.
+# Approximate trading bars per year for standard 23/5 instruments (e.g. XAUUSD / Forex).
 # Basis: 23 trading hours/day × 261 trading days/year
-# (XAUUSD trades ~Sun 22:00 UTC to Fri 22:00 UTC, minus ~1h daily maintenance)
-_BARS_PER_YEAR: dict[str, int] = {
+_BARS_PER_YEAR_TRADITIONAL: dict[str, int] = {
     "1min":  360_180,   # 23 × 60 × 261
     "5min":   72_036,   # 23 × 12 × 261
     "15min":  24_012,   # 23 × 4  × 261
@@ -30,22 +29,39 @@ _BARS_PER_YEAR: dict[str, int] = {
     "1D":        261,   # 1       × 261
 }
 
+# Approximate trading bars per year for 24/7 instruments (e.g. Crypto: BTC, ETH).
+# Basis: 24 trading hours/day × 365.25 days/year
+_BARS_PER_YEAR_CRYPTO: dict[str, int] = {
+    "1min":  525_960,   # 24 × 60 × 365.25
+    "5min":  105_192,   # 24 × 12 × 365.25
+    "15min":  35_064,   # 24 × 4  × 365.25
+    "30min":  17_532,   # 24 × 2  × 365.25
+    "1h":      8_766,   # 24 × 1  × 365.25
+    "4h":      2_191,   # 24/4    × 365.25 (≈ 6 bars/day)
+    "1D":        365,   # 1       × 365.25
+}
+
+_BARS_PER_YEAR: dict[str, int] = _BARS_PER_YEAR_TRADITIONAL
+
 
 @dataclass
 class ProjectConfig:
-    # Path to your full MT4/MT5-style minute CSV.
-    # Long Bid file (May 2003 – May 2026, ~23 years) — primary dataset: enough
-    # history for several walk-forward folds plus a multi-year sealed test.
-    csv_path: Path = Path("data/XAUUSD_1 Min_Bid_2003.05.05_2026.05.31.csv")
-    # Short Ask file (Jan 2020 – Jan 2026, ~6 years) — kept as a fast smoke-test
-    # dataset; uncomment to fall back to it.
-    #csv_path: Path = Path("data/XAUUSD_1 Min_Ask_2020.01.09_2026.01.15.csv")
+    # Instrument name / symbol (e.g. "XAUUSD", "BTC/USDT", "ETH/USDT", "EURUSD")
+    symbol: str = "XAUUSD"
 
-    # Your file column is usually exactly "Time (EET)".
+    # Set to True for 24/7 markets like crypto (BTC, ETH), False for traditional 23/5 markets (Forex, Gold)
+    is_crypto_24_7: bool = False
+
+    # Path to your minute OHLCV CSV (can be MT4/MT5 export or CCXT download)
+    csv_path: Path = Path("data/XAUUSD_1 Min_Bid_2003.05.05_2026.05.31.csv")
+
+    # Time column name in CSV.
+    # Common examples: "Time (EET)", "Time", "timestamp", "datetime"
     time_col: str = "Time (EET)"
 
-    # Many brokers call this EET but actually follow EET/EEST server time.
-    # Europe/Helsinki is a practical EET/EEST timezone choice.
+    # Timezone of the raw CSV timestamps.
+    # For MT4/MT5: "Europe/Helsinki" (EET/EEST server time)
+    # For CCXT / Crypto: "UTC"
     source_tz: str = "Europe/Helsinki"
 
     # MT4/MT5-style M1 exports usually timestamp each row at candle OPEN.
@@ -203,9 +219,10 @@ class ProjectConfig:
     @property
     def periods_per_year(self) -> int:
         """Trading bars per year at decision_timeframe — used for annualising
-        Sharpe, Sortino, Calmar.  Derived from _BARS_PER_YEAR lookup so it
-        automatically adjusts when you change decision_timeframe."""
-        return _BARS_PER_YEAR.get(self.pandas_tf, 6_003)
+        Sharpe, Sortino, Calmar. Automatically switches between 24/7 crypto
+        and traditional 23/5 schedules based on is_crypto_24_7."""
+        lookup = _BARS_PER_YEAR_CRYPTO if self.is_crypto_24_7 else _BARS_PER_YEAR_TRADITIONAL
+        return lookup.get(self.pandas_tf, 8_766 if self.is_crypto_24_7 else 6_003)
 
 
 CFG = ProjectConfig()
