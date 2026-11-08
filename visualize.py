@@ -207,19 +207,23 @@ def save_html(fig, path):
 
 def plot_learning_curve(
     evals_df: pd.DataFrame,
-    title: str = "PPO Learning Curve — Rewards & Drawdown vs Timesteps",
+    title: str = "Courbe d'apprentissage PPO — Récompenses & Drawdown vs Timesteps",
 ) -> go.Figure:
-    """Plot training and validation reward progression alongside drawdown %
-    across PPO training timesteps from consistency_evals.csv.
+    """Génère la courbe d'apprentissage interactive Plotly à partir de consistency_evals.csv.
+
+    Affiche la progression des récompenses (en unités de risque R) pour l'évaluation train
+    et validation, ainsi que les pourcentages de drawdown maximal sur un axe secondaire.
+    Marque d'une ligne verticale le meilleur checkpoint (eligible best score).
     """
     if evals_df is None or evals_df.empty:
         fig = go.Figure()
-        fig.update_layout(title="No learning curve evaluation data found.")
+        fig.update_layout(title="Aucune donnée d'évaluation d'apprentissage trouvée.")
         return fig
 
     df = evals_df.sort_values("timesteps").reset_index(drop=True)
     fig = go.Figure()
 
+    # Courbe de récompense train eval
     if "train_eval_r" in df.columns:
         fig.add_trace(
             go.Scatter(
@@ -228,10 +232,11 @@ def plot_learning_curve(
                 mode="lines+markers",
                 name="Train eval reward",
                 line=dict(color="#1976d2", width=2.5),
-                hovertemplate="Timesteps: %{x:,}<br>Train eval R: %{y:.3f}<extra></extra>",
+                hovertemplate="Timesteps : %{x:,}<br>Train eval R : %{y:.3f}<extra></extra>",
             )
         )
 
+    # Courbe de récompense validation (OOS)
     if "val_r" in df.columns:
         fig.add_trace(
             go.Scatter(
@@ -240,10 +245,11 @@ def plot_learning_curve(
                 mode="lines+markers",
                 name="Validation reward",
                 line=dict(color="#e65100", width=2.5),
-                hovertemplate="Timesteps: %{x:,}<br>Val R: %{y:.3f}<extra></extra>",
+                hovertemplate="Timesteps : %{x:,}<br>Val R : %{y:.3f}<extra></extra>",
             )
         )
 
+    # Drawdown maximal en train (%) sur l'axe secondaire Y2
     if "train_dd_pct" in df.columns:
         fig.add_trace(
             go.Scatter(
@@ -253,10 +259,11 @@ def plot_learning_curve(
                 name="Train Max DD %",
                 yaxis="y2",
                 line=dict(color="#90caf9", width=1.5, dash="dot"),
-                hovertemplate="Timesteps: %{x:,}<br>Train DD: %{y:.2f}%<extra></extra>",
+                hovertemplate="Timesteps : %{x:,}<br>Train DD : %{y:.2f}%<extra></extra>",
             )
         )
 
+    # Drawdown maximal en validation (%) sur l'axe secondaire Y2
     if "val_dd_pct" in df.columns:
         fig.add_trace(
             go.Scatter(
@@ -266,11 +273,11 @@ def plot_learning_curve(
                 name="Val Max DD %",
                 yaxis="y2",
                 line=dict(color="#ffb74d", width=1.5, dash="dash"),
-                hovertemplate="Timesteps: %{x:,}<br>Val DD: %{y:.2f}%<extra></extra>",
+                hovertemplate="Timesteps : %{x:,}<br>Val DD : %{y:.2f}%<extra></extra>",
             )
         )
 
-    # Highlight best checkpoint
+    # Mise en évidence du meilleur checkpoint sélectionné
     if "score" in df.columns and df["score"].notna().any():
         eligible_df = df[df["eligible"] == True] if "eligible" in df.columns else df
         if not eligible_df.empty and eligible_df["score"].notna().any():
@@ -285,7 +292,7 @@ def plot_learning_curve(
             line_width=2,
             line_dash="dash",
             line_color="#2e7d32",
-            annotation_text=f"Best Checkpoint: {int(best['timesteps']):,} steps",
+            annotation_text=f"Meilleur Checkpoint : {int(best['timesteps']):,} steps",
             annotation_position="top left",
         )
 
@@ -294,10 +301,10 @@ def plot_learning_curve(
         template="plotly_white",
         height=540,
         hovermode="x unified",
-        xaxis_title="Training timesteps",
-        yaxis_title="Episode reward (R-units)",
+        xaxis_title="Timesteps d'entraînement",
+        yaxis_title="Récompense par épisode (unités R)",
         yaxis2=dict(
-            title="Max Drawdown %",
+            title="Drawdown Max %",
             overlaying="y",
             side="right",
             rangemode="tozero",

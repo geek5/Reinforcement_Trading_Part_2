@@ -65,33 +65,34 @@ def load_mt_ohlcv_csv(
     for c in OHLCV:
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    # Support multiple formats: MT4/MT5 (2020.01.09 01:00:00), ISO (2020-01-09 01:00:00),
-    # or Unix millisecond/second timestamps from CCXT / crypto exchanges.
+    # Prise en charge de multiples formats de dates :
+    # 1. Format MT4/MT5 (ex. '2020.01.09 01:00:00')
+    # 2. Format standard ISO 8601 UTC (ex. '2024-01-01 00:00:00')
+    # 3. Timestamps numériques Unix en millisecondes ou secondes (issus des téléchargements CCXT)
     raw_col = df[time_col]
-    # Check if numeric epoch (CCXT timestamp column)
     if pd.api.types.is_numeric_dtype(raw_col) or (raw_col.astype(str).str.isnumeric().mean() > 0.9):
         num_vals = pd.to_numeric(raw_col, errors="coerce")
-        # Check if milliseconds (> 1e11) vs seconds
+        # Détection automatique de l'échelle : millisecondes (> 1e11) vs secondes
         if num_vals.median() > 1e11:
             ts = pd.to_datetime(num_vals, unit="ms", utc=True)
         else:
             ts = pd.to_datetime(num_vals, unit="s", utc=True)
     else:
-        # String datetime parsing
+        # Parsing des dates sous forme de chaînes de caractères
         str_clean = raw_col.astype(str).str.strip()
         ts = pd.to_datetime(str_clean, errors="coerce", format="%Y.%m.%d %H:%M:%S")
         if ts.isna().mean() > 0.01:
-            # Fallback to general parser (ISO 8601, etc.)
+            # Repli sur le parseur générique ISO 8601
             ts = pd.to_datetime(str_clean, errors="coerce")
 
     df = df.loc[~ts.isna()].copy()
     ts = ts.loc[~ts.isna()]
 
-    # If ts already has timezone (e.g. from UTC parsing), convert; otherwise localize
+    # Gestion propre du fuseau horaire : si déjà tz-aware (ex. UTC), on convertit ; sinon on localise
     if ts.dt.tz is not None:
         idx = ts.dt.tz_convert(source_tz)
     else:
-        # Localize broker/server time. DST ambiguity can happen; fall back safely.
+        # Localisation avec gestion des ambiguïtés DST (changement d'heure été/hiver)
         try:
             idx = ts.dt.tz_localize(source_tz, ambiguous="infer", nonexistent="shift_forward")
         except Exception:

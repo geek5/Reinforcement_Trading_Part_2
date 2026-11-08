@@ -1,13 +1,13 @@
 """
 download_ccxt.py
 ----------------
-Download 1-minute (or custom timeframe) OHLCV candles using CCXT and export
-to CSV compatible with the RL trading pipeline.
+Script de téléchargement de bougies OHLCV 1m (ou autre timeframe) via la bibliothèque CCXT.
+Exporte les données au format CSV directement exploitable par le pipeline RL (Gymnasium / SB3).
 
-Supports any exchange available in CCXT (Binance, OKX, Bybit, Kraken, Coinbase, etc.)
-and any pair/symbol (e.g. BTC/USDT, ETH/USDT, SOL/USDT, EUR/USD, etc.).
+Compatible avec tous les exchanges gérés par CCXT (Binance, Bybit, OKX, Kraken, Coinbase, etc.)
+et n'importe quelle paire / instrument (ex. BTC/USDT, ETH/USDT, SOL/USDT, EUR/USD, etc.).
 
-Usage:
+Exemples d'utilisation :
     python download_ccxt.py --symbol BTC/USDT --exchange binance --since 2023-01-01 --until 2024-01-01
     python download_ccxt.py --symbol ETH/USDT --exchange bybit --days 90
     python download_ccxt.py --symbol SOL/USDT --output data/SOLUSDT_1m.csv
@@ -31,13 +31,14 @@ except ImportError as exc:
 
 
 def get_exchange_instance(exchange_id: str, rate_limit: bool = True) -> ccxt.Exchange:
-    """Create and return a configured CCXT exchange instance."""
+    """Initialise et configure l'instance de l'exchange CCXT demandé."""
     exchange_class = getattr(ccxt, exchange_id.lower(), None)
     if exchange_class is None:
         raise ValueError(
-            f"Exchange '{exchange_id}' is not recognized by ccxt. "
-            f"Available exchanges include: binance, bybit, okx, kraken, coinbase, etc."
+            f"L'exchange '{exchange_id}' n'est pas reconnu par ccxt. "
+            f"Exchanges courants : binance, bybit, okx, kraken, coinbase, etc."
         )
+    # Activation du rate limiting pour éviter d'être banni par l'API de l'exchange
     return exchange_class({
         "enableRateLimit": rate_limit,
         "timeout": 30000,
@@ -45,7 +46,7 @@ def get_exchange_instance(exchange_id: str, rate_limit: bool = True) -> ccxt.Exc
 
 
 def parse_timestamp_to_ms(dt_str: Optional[str]) -> Optional[int]:
-    """Parse a date/datetime string into UTC epoch milliseconds."""
+    """Convertit une chaîne de date/heure (ex: '2024-01-01') en millisecondes epoch UTC."""
     if dt_str is None:
         return None
     dt_str = dt_str.strip()
@@ -53,11 +54,11 @@ def parse_timestamp_to_ms(dt_str: Optional[str]) -> Optional[int]:
         dt = pd.to_datetime(dt_str, utc=True)
         return int(dt.timestamp() * 1000)
     except Exception as exc:
-        raise ValueError(f"Could not parse datetime string: {dt_str!r}") from exc
+        raise ValueError(f"Impossible de parser la date : {dt_str!r}") from exc
 
 
 def format_ms_to_iso(ms: int) -> str:
-    """Format millisecond timestamp into ISO 8601 string."""
+    """Formate un timestamp en millisecondes en chaîne ISO UTC lisible."""
     return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -72,19 +73,20 @@ def download_ohlcv(
     retry_delay_sec: float = 2.0,
     verbose: bool = True,
 ) -> pd.DataFrame:
-    """Download OHLCV candles paginated over a date range.
+    """Télécharge les bougies OHLCV par pagination sur une plage temporelle donnée.
 
-    Returns a DataFrame with columns: ['Timestamp', 'Time', 'Open', 'High', 'Low', 'Close', 'Volume']
-    where 'Time' is ISO UTC 'YYYY-MM-DD HH:MM:SS'.
+    Retourne un DataFrame avec les colonnes :
+    ['Timestamp', 'Time', 'Open', 'High', 'Low', 'Close', 'Volume']
+    où 'Time' est une chaîne UTC formatée : 'YYYY-MM-DD HH:MM:SS'.
     """
     if not exchange.has.get("fetchOHLCV", False):
-        raise ValueError(f"Exchange {exchange.id} does not support fetchOHLCV.")
+        raise ValueError(f"L'exchange {exchange.id} ne supporte pas l'endpoint fetchOHLCV.")
 
-    # Timeframe duration in milliseconds
+    # Durée de chaque bougie en millisecondes
     tf_seconds = exchange.parse_timeframe(timeframe)
     tf_ms = tf_seconds * 1000
 
-    # If since_ms is not given, default to 30 days ago
+    # Si 'since_ms' n'est pas renseigné, par défaut on prend 30 jours dans le passé
     now_ms = exchange.milliseconds()
     if until_ms is None:
         until_ms = now_ms
@@ -92,24 +94,27 @@ def download_ohlcv(
         since_ms = until_ms - (30 * 24 * 60 * 60 * 1000)
 
     if since_ms >= until_ms:
-        raise ValueError(f"since_ms ({since_ms}) must be earlier than until_ms ({until_ms})")
+        raise ValueError(f"since_ms ({since_ms}) doit être strictement antérieur à until_ms ({until_ms})")
 
-    # Estimated total candles for progress bar
+    # Estimation du nombre total de bougies pour la barre de progression
     total_expected = max(1, (until_ms - since_ms) // tf_ms)
 
     all_ohlcv = []
     current_since = since_ms
 
     if verbose:
-        print(f"Downloading {symbol} ({timeframe}) from {exchange.id.upper()}...")
-        print(f"From : {format_ms_to_iso(since_ms)} UTC")
-        print(f"To   : {format_ms_to_iso(until_ms)} UTC")
-        print(f"Estimated bars: ~{total_expected:,}")
+        print(f"Téléchargement de {symbol} ({timeframe}) sur {exchange.id.upper()}...")
+        print(f"Du   : {format_ms_to_iso(since_ms)} UTC")
+        print(f"Au   : {format_ms_to_iso(until_ms)} UTC")
+        print(f"Bougies estimées : ~{total_expected:,}")
 
+    # Barre de progression interactive tqdm
     pbar = tqdm(total=total_expected, unit="bars", disable=not verbose)
 
+    # Boucle de pagination tant qu'on n'a pas atteint la date de fin
     while current_since <= until_ms:
         candles = None
+        # Mécanisme de retry exponentiel en cas de déconnexion réseau ou rate limit
         for retry in range(max_retries):
             try:
                 candles = exchange.fetch_ohlcv(
@@ -121,15 +126,15 @@ def download_ohlcv(
                 break
             except (ccxt.NetworkError, ccxt.RateLimitExceeded, ccxt.ExchangeError) as exc:
                 if retry == max_retries - 1:
-                    print(f"\nFailed to fetch at timestamp {current_since} after {max_retries} attempts: {exc}")
+                    print(f"\nÉchec de récupération au timestamp {current_since} après {max_retries} essais : {exc}")
                     raise
                 time.sleep(retry_delay_sec * (2 ** retry))
 
         if not candles:
-            # No more data returned by the exchange
+            # L'exchange ne renvoie plus de bougies (fin de l'historique disponible)
             break
 
-        # Filter out candles beyond until_ms
+        # On ignore les bougies qui dépassent la date de fin souhaitée
         valid_candles = [c for c in candles if c[0] <= until_ms]
         if not valid_candles:
             break
@@ -138,48 +143,49 @@ def download_ohlcv(
         pbar.update(len(valid_candles))
 
         last_candle_ms = valid_candles[-1][0]
-        # Next request begins at the candle immediately following the last one
+        # La prochaine requête débute juste après la dernière bougie reçue
         next_since = last_candle_ms + tf_ms
 
         if next_since <= current_since:
-            # Protect against infinite loop if exchange returns same timestamp
+            # Sécurité anti-boucle infinie si l'exchange renvoie les mêmes timestamps
             next_since = current_since + tf_ms
 
         current_since = next_since
 
-        # If exchange returned fewer candles than requested, we might have reached the end
+        # Si l'exchange a retourné moins de bougies que la limite et qu'on a dépassé until_ms
         if len(candles) < limit_per_request and last_candle_ms >= until_ms:
             break
 
     pbar.close()
 
     if not all_ohlcv:
-        print("Warning: No candles downloaded.")
+        print("Attention : Aucune bougie téléchargée.")
         return pd.DataFrame(columns=["Timestamp", "Time", "Open", "High", "Low", "Close", "Volume"])
 
+    # Construction du DataFrame pandas et déduplication
     df = pd.DataFrame(all_ohlcv, columns=["Timestamp", "Open", "High", "Low", "Close", "Volume"])
     df = df.drop_duplicates(subset=["Timestamp"]).sort_values("Timestamp").reset_index(drop=True)
 
-    # Format human-readable UTC Time column: "YYYY-MM-DD HH:MM:SS"
+    # Création de la colonne de date lisible UTC "YYYY-MM-DD HH:MM:SS"
     df["Time"] = pd.to_datetime(df["Timestamp"], unit="ms", utc=True).dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    # Column order
+    # Ordre standard des colonnes
     df = df[["Timestamp", "Time", "Open", "High", "Low", "Close", "Volume"]]
 
     if verbose:
-        print(f"Downloaded {len(df):,} unique candles.")
+        print(f"Téléchargement terminé : {len(df):,} bougies uniques.")
         if len(df):
-            print(f"Span: {df['Time'].iloc[0]} -> {df['Time'].iloc[-1]} UTC")
+            print(f"Période couverte : {df['Time'].iloc[0]} -> {df['Time'].iloc[-1]} UTC")
 
     return df
 
 
 def save_ohlcv_csv(df: pd.DataFrame, output_path: str | Path) -> Path:
-    """Save the downloaded candles DataFrame to CSV."""
+    """Enregistre le DataFrame de bougies sous forme de fichier CSV."""
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False)
-    print(f"Saved dataset -> {path.resolve()}")
+    print(f"Fichier sauvegardé -> {path.resolve()}")
     return path
 
 

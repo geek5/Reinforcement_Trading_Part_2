@@ -17,27 +17,27 @@ _TF_TO_PANDAS: dict[str, str] = {
     "D1":  "1D",    "1d":  "1D",   "1D":    "1D",
 }
 
-# Approximate trading bars per year for standard 23/5 instruments (e.g. XAUUSD / Forex).
-# Basis: 23 trading hours/day × 261 trading days/year
+# Nombre approximatif de bougies de trading par an pour les marchés traditionnels 23/5 (ex. XAUUSD / Forex).
+# Base de calcul : 23 heures de trading par jour × 261 jours ouvrés par an.
 _BARS_PER_YEAR_TRADITIONAL: dict[str, int] = {
     "1min":  360_180,   # 23 × 60 × 261
     "5min":   72_036,   # 23 × 12 × 261
     "15min":  24_012,   # 23 × 4  × 261
     "30min":  12_006,   # 23 × 2  × 261
     "1h":      6_003,   # 23 × 1  × 261
-    "4h":      1_501,   # 23/4    × 261  (≈ 6 bars/day)
+    "4h":      1_501,   # 23/4    × 261  (environ 6 barres par jour)
     "1D":        261,   # 1       × 261
 }
 
-# Approximate trading bars per year for 24/7 instruments (e.g. Crypto: BTC, ETH).
-# Basis: 24 trading hours/day × 365.25 days/year
+# Nombre approximatif de bougies par an pour les instruments 24/7 (ex. Crypto : BTC, ETH, SOL).
+# Base de calcul : 24 heures par jour × 365.25 jours par an (marché continu).
 _BARS_PER_YEAR_CRYPTO: dict[str, int] = {
     "1min":  525_960,   # 24 × 60 × 365.25
     "5min":  105_192,   # 24 × 12 × 365.25
     "15min":  35_064,   # 24 × 4  × 365.25
     "30min":  17_532,   # 24 × 2  × 365.25
     "1h":      8_766,   # 24 × 1  × 365.25
-    "4h":      2_191,   # 24/4    × 365.25 (≈ 6 bars/day)
+    "4h":      2_191,   # 24/4    × 365.25 (environ 6 barres par jour)
     "1D":        365,   # 1       × 365.25
 }
 
@@ -46,22 +46,19 @@ _BARS_PER_YEAR: dict[str, int] = _BARS_PER_YEAR_TRADITIONAL
 
 @dataclass
 class ProjectConfig:
-    # Instrument name / symbol (e.g. "XAUUSD", "BTC/USDT", "ETH/USDT", "EURUSD")
+    # Symbole de l'instrument (ex. "XAUUSD", "BTC/USDT", "ETH/USDT", "EURUSD")
     symbol: str = "XAUUSD"
 
-    # Set to True for 24/7 markets like crypto (BTC, ETH), False for traditional 23/5 markets (Forex, Gold)
+    # Définir à True pour les marchés crypto continus 24/7 (BTC, ETH), False pour marchés traditionnels 23/5
     is_crypto_24_7: bool = False
 
-    # Path to your minute OHLCV CSV (can be MT4/MT5 export or CCXT download)
+    # Chemin vers le fichier CSV de bougies 1 minute (export MT4/MT5 ou téléchargement via download_ccxt.py)
     csv_path: Path = Path("data/XAUUSD_1 Min_Bid_2003.05.05_2026.05.31.csv")
 
-    # Time column name in CSV.
-    # Common examples: "Time (EET)", "Time", "timestamp", "datetime"
+    # Nom de la colonne temporelle dans le CSV ("Time (EET)", "Time", "Timestamp", etc.)
     time_col: str = "Time (EET)"
 
-    # Timezone of the raw CSV timestamps.
-    # For MT4/MT5: "Europe/Helsinki" (EET/EEST server time)
-    # For CCXT / Crypto: "UTC"
+    # Fuseau horaire d'origine des données ("Europe/Helsinki" pour MT4/MT5 EET, "UTC" pour CCXT / crypto)
     source_tz: str = "Europe/Helsinki"
 
     # MT4/MT5-style M1 exports usually timestamp each row at candle OPEN.

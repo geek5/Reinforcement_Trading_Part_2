@@ -1,14 +1,19 @@
 """
 plot_learning_curve.py
 ----------------------
-Plot the training learning curve from consistency_evals.csv (rewards and drawdowns
-over training timesteps), identifying the best eligible checkpoint.
+Script de visualisation de la courbe d'apprentissage de l'agent PPO à partir du fichier
+de logs `consistency_evals.csv`.
 
-Usage:
-    python plot_learning_curve.py                     # auto-find latest consistency_evals.csv
-    python plot_learning_curve.py --fold 1            # inspect fold 1
-    python plot_learning_curve.py --fold production   # inspect production fold (models/eval_logs)
-    python plot_learning_curve.py --file path/to/consistency_evals.csv
+Permet de suivre l'évolution :
+  - Du reward en train eval vs validation
+  - Du drawdown maximal (%)
+  - Du score composite et de l'identification visuelle du meilleur checkpoint sélectionné
+
+Exemples d'utilisation :
+    python plot_learning_curve.py                     # Trouve automatiquement le dernier run de modèles
+    python plot_learning_curve.py --fold 1            # Affiche la courbe d'apprentissage du fold 1
+    python plot_learning_curve.py --fold production   # Affiche le fold de production (models/eval_logs)
+    python plot_learning_curve.py --file chemin/vers/consistency_evals.csv
     python plot_learning_curve.py --output outputs/learning_curve.html --no-browser
 """
 from __future__ import annotations
@@ -30,17 +35,20 @@ def find_project_root() -> Path:
 
 
 def resolve_evals_path(root: Path, fold: int | str | None = None, explicit_file: str | None = None) -> Path:
+    """Localise le fichier consistency_evals.csv cible selon le fold ou le chemin explicite."""
     if explicit_file:
         p = Path(explicit_file)
         if not p.exists():
-            raise FileNotFoundError(f"File not found: {p}")
+            raise FileNotFoundError(f"Fichier introuvable : {p}")
         return p
 
     models = root / "models"
+    # Fold de production (promu après validation walk-forward)
     if fold == "production":
         p = models / "eval_logs" / "consistency_evals.csv"
         if p.exists():
             return p
+    # Fold walk-forward spécifique
     elif fold is not None and str(fold).isdigit():
         p = models / "walk_forward" / f"fold_{fold}" / "eval_logs" / "consistency_evals.csv"
         if p.exists():
@@ -49,7 +57,7 @@ def resolve_evals_path(root: Path, fold: int | str | None = None, explicit_file:
         if p_sliding.exists():
             return p_sliding
 
-    # Auto search newest
+    # Recherche automatique du fichier le plus récemment modifié
     candidates = sorted(
         models.glob("**/eval_logs/consistency_evals.csv"),
         key=lambda p: p.stat().st_mtime,
@@ -57,7 +65,7 @@ def resolve_evals_path(root: Path, fold: int | str | None = None, explicit_file:
     if candidates:
         return candidates[-1]
 
-    # Also check outputs directory
+    # Recherche de secours dans outputs/
     out_candidates = sorted(
         (root / "outputs").glob("**/consistency_evals.csv"),
         key=lambda p: p.stat().st_mtime,
@@ -65,7 +73,9 @@ def resolve_evals_path(root: Path, fold: int | str | None = None, explicit_file:
     if out_candidates:
         return out_candidates[-1]
 
-    raise FileNotFoundError("No consistency_evals.csv found. Train a model first via train_ppo.py.")
+    raise FileNotFoundError(
+        "Aucun fichier consistency_evals.csv trouvé. Entraînez d'abord un modèle avec train_ppo.py."
+    )
 
 
 def main():
