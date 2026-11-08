@@ -1,10 +1,15 @@
-# XAUUSD M1 → RL-ready feature + bracket-trading pipeline
+# RL-ready feature + bracket-trading pipeline (Multi-instrument: XAUUSD, Crypto & Custom)
 
-This project is built for MT4/MT5-style XAUUSD minute data such as:
+This project provides a complete reinforcement learning trading research pipeline for minute data (MT4/MT5 exports or CCXT crypto downloads):
 
 ```csv
 Time (EET),Open,High,Low,Close,Volume
 2020.01.09 01:00:00,1557.152,1557.452,1555.202,1555.302,0.045
+```
+or CCXT / UTC format:
+```csv
+Time,Open,High,Low,Close,Volume
+2024-01-01 00:00:00,42250.0,42280.0,42240.0,42270.0,12.54
 ```
 
 It gives you a complete research pipeline:
@@ -24,6 +29,35 @@ It gives you a complete research pipeline:
 ```bash
 pip install -r requirements.txt
 ```
+
+### Télécharger des bougies 1m via CCXT (Custom instrument)
+
+Vous pouvez télécharger l'historique 1m pour n'importe quel actif crypto supporté par CCXT (Binance, Bybit, OKX, Kraken, etc.) :
+
+```bash
+# Exemple : Télécharger 90 jours de bougies 1m BTC/USDT depuis Binance
+python download_ccxt.py --symbol BTC/USDT --exchange binance --days 90
+
+# Exemple : Télécharger une plage de dates spécifique pour ETH/USDT
+python download_ccxt.py --symbol ETH/USDT --exchange binance --since 2023-01-01 --until 2024-01-01 --output data/ETHUSDT_1m.csv
+```
+
+### Configuration d'un instrument custom dans `config.py`
+
+Pour utiliser un instrument personnalisé (par ex. `BTC/USDT`), modifiez simplement `config.py` :
+
+```python
+CFG.symbol = "BTC/USDT"
+CFG.is_crypto_24_7 = True                         # Active le calcul annualisé 24/7 (365 jours/an)
+CFG.csv_path = Path("data/binance_BTCUSDT_1m.csv")
+CFG.time_col = "Time"                             # Colonne générée par download_ccxt.py
+CFG.source_tz = "UTC"                             # UTC pour CCXT
+CFG.spread_price = 1.0                            # Ajuster selon l'actif
+CFG.slippage_price = 0.5
+CFG.commission_per_trade = 0.0                    # Ou frais d'échange
+```
+
+Pour XAUUSD ou le Forex classique :
 
 Put your full file here (the long Bid history is the primary dataset; the short
 Ask file is kept as a fast smoke-test fallback — switch between them in `config.py`):
@@ -55,10 +89,19 @@ When you are ready for the one-time holdout reveal, run:
 python final_holdout_eval.py
 ```
 
-Or open:
+### Visualiser la courbe d'apprentissage (Learning Curve)
 
-```text
-notebooks/XAUUSD_RL_Pipeline_Demo.ipynb
+Pour afficher et exporter la courbe d'apprentissage interactive (récompenses train/val, drawdowns, score de consistance et meilleur checkpoint) :
+
+```bash
+python plot_learning_curve.py                     # Détecte automatiquement le dernier run
+python plot_learning_curve.py --fold 1            # Courbe d'apprentissage du fold 1
+python plot_learning_curve.py --output curve.html # Enregistre en fichier HTML interactif
+```
+
+Vous pouvez aussi exécuter le diagnostic complet :
+```bash
+python training_diagnostics.py
 ```
 
 ## Important defaults

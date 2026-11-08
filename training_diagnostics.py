@@ -35,6 +35,17 @@ def _load_eval_logs(log_dir: Path) -> dict | None:
     return {"timesteps": d["timesteps"], "results": d["results"], "ep_lengths": d["ep_lengths"]}
 
 
+def _load_consistency_evals(models_path: Path) -> pd.DataFrame | None:
+    """Find and load consistency_evals.csv if present."""
+    candidates = sorted(
+        models_path.glob("**/eval_logs/consistency_evals.csv"),
+        key=lambda p: p.stat().st_mtime,
+    )
+    if candidates:
+        return pd.read_csv(candidates[-1]).sort_values("timesteps").reset_index(drop=True)
+    return None
+
+
 def _learning_curve_df(logs: dict) -> pd.DataFrame:
     ts = logs["timesteps"]
     r = logs["results"]          # (n_evals, n_episodes_per_eval)
@@ -302,12 +313,37 @@ def run_diagnostics(models_dir: str = "models", reveal_test: bool = False) -> No
     # ── 1. Learning curve ────────────────────────────────────────────────────
     print("\n[1] LEARNING CURVE")
     print("-" * 50)
+    consistency_df = _load_consistency_evals(models_path)
     logs = _load_eval_logs(eval_log_dir)
-    if logs is None:
-        print("  No eval logs found. Train the model first (train_ppo.py).")
-    else:
+
+    if consistency_df is not None and not consistency_df.empty:
+        print("  Found consistency evaluations log:")
+        cols_to_show = [c for c in ["timesteps", "train_eval_r", "val_r", "train_dd_pct", "val_dd_pct", "score", "eligible"] if c in consistency_df.columns]
+        print(consistency_df[cols_to_show].to_string(index=False))
+
+        if "val_r" in consistency_df.columns:
+            first_val = consistency_df["val_r"].iloc[:max(len(consistency_df) // 2, 1)].mean()
+            last_val = consistency_df["val_r"].iloc[len(consistency_df) // 2:].mean()
+            delta = last_val - first_val
+            print(f"\n  Validation reward trend: {first_val:+.2f} -> {last_val:+.2f} (Δ: {delta:+.2f})")
+            print(f"  Is learning: {'YES' if delta > 0 else 'NO / Inconclusive'}")
+
+        # Also save interactive HTML plot if possible
+        try:
+            from visualize import plot_learning_curve, save_html
+            lc_fig = plot_learning_curve(consistency_df)
+            out_lc = Path("outputs") / "learning_curve_diagnostics.html"
+            out_lc.parent.mkdir(parents=True, exist_ok=True)
+            save_html(lc_fig, out_lc)
+            print(f"  Interactive learning curve chart -> {out_lc}")
+        except Exception as e:
+            pass
+    elif logs is not None:
         curve = _learning_curve_df(logs)
         _print_learning_curve(curve)
+    else:
+        print("  No eval logs (consistency_evals.csv or evaluations.npz) found.")
+        print("  Train the model first via train_ppo.py.")
 
     # ── 2. Data + feature quality ────────────────────────────────────────────
     print("\n[2] FEATURE QUALITY")

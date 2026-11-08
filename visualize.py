@@ -205,6 +205,110 @@ def save_html(fig, path):
     return path
 
 
+def plot_learning_curve(
+    evals_df: pd.DataFrame,
+    title: str = "PPO Learning Curve — Rewards & Drawdown vs Timesteps",
+) -> go.Figure:
+    """Plot training and validation reward progression alongside drawdown %
+    across PPO training timesteps from consistency_evals.csv.
+    """
+    if evals_df is None or evals_df.empty:
+        fig = go.Figure()
+        fig.update_layout(title="No learning curve evaluation data found.")
+        return fig
+
+    df = evals_df.sort_values("timesteps").reset_index(drop=True)
+    fig = go.Figure()
+
+    if "train_eval_r" in df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df["timesteps"],
+                y=df["train_eval_r"],
+                mode="lines+markers",
+                name="Train eval reward",
+                line=dict(color="#1976d2", width=2.5),
+                hovertemplate="Timesteps: %{x:,}<br>Train eval R: %{y:.3f}<extra></extra>",
+            )
+        )
+
+    if "val_r" in df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df["timesteps"],
+                y=df["val_r"],
+                mode="lines+markers",
+                name="Validation reward",
+                line=dict(color="#e65100", width=2.5),
+                hovertemplate="Timesteps: %{x:,}<br>Val R: %{y:.3f}<extra></extra>",
+            )
+        )
+
+    if "train_dd_pct" in df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df["timesteps"],
+                y=df["train_dd_pct"],
+                mode="lines+markers",
+                name="Train Max DD %",
+                yaxis="y2",
+                line=dict(color="#90caf9", width=1.5, dash="dot"),
+                hovertemplate="Timesteps: %{x:,}<br>Train DD: %{y:.2f}%<extra></extra>",
+            )
+        )
+
+    if "val_dd_pct" in df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df["timesteps"],
+                y=df["val_dd_pct"],
+                mode="lines+markers",
+                name="Val Max DD %",
+                yaxis="y2",
+                line=dict(color="#ffb74d", width=1.5, dash="dash"),
+                hovertemplate="Timesteps: %{x:,}<br>Val DD: %{y:.2f}%<extra></extra>",
+            )
+        )
+
+    # Highlight best checkpoint
+    if "score" in df.columns and df["score"].notna().any():
+        eligible_df = df[df["eligible"] == True] if "eligible" in df.columns else df
+        if not eligible_df.empty and eligible_df["score"].notna().any():
+            best_idx = eligible_df["score"].idxmax()
+            best = eligible_df.loc[best_idx]
+        else:
+            best_idx = df["score"].idxmax()
+            best = df.loc[best_idx]
+
+        fig.add_vline(
+            x=best["timesteps"],
+            line_width=2,
+            line_dash="dash",
+            line_color="#2e7d32",
+            annotation_text=f"Best Checkpoint: {int(best['timesteps']):,} steps",
+            annotation_position="top left",
+        )
+
+    fig.update_layout(
+        title=title,
+        template="plotly_white",
+        height=540,
+        hovermode="x unified",
+        xaxis_title="Training timesteps",
+        yaxis_title="Episode reward (R-units)",
+        yaxis2=dict(
+            title="Max Drawdown %",
+            overlaying="y",
+            side="right",
+            rangemode="tozero",
+            showgrid=False,
+        ),
+        legend=dict(orientation="h", y=1.06, x=0),
+    )
+    fig.update_xaxes(tickformat=",")
+    return fig
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Training / validation analysis
 # ─────────────────────────────────────────────────────────────────────────────
