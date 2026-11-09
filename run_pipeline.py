@@ -135,7 +135,7 @@ def main(args=None):
         CFG.decision_timeframe = args.decision_tf
 
     out_dir = Path(getattr(args, "out_dir", "outputs"))
-    out_dir.mkdir(exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     print("Loading M1 data...")
     m1 = load_mt_ohlcv_csv(

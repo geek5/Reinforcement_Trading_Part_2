@@ -242,12 +242,15 @@ def _feature_quality(feat: pd.DataFrame, feature_cols: list[str]) -> pd.DataFram
         has_scipy = False
 
     # 1-bar ahead return (the most granular predictive target).
+    if feat.empty or "Close" not in feat:
+        return pd.DataFrame(columns=["mean", "std", "skew", "excess_kurt", "cv", "spearman_r_1bar", "spearman_p_1bar", "signal_p05"])
+
     fut_ret = feat["Close"].pct_change().shift(-1)
     rows = []
 
     for col in feature_cols:
         s = feat[col].dropna()
-        if len(s) < 50:
+        if len(s) < 5:
             continue
         mean_v = float(s.mean())
         std_v  = float(s.std())
@@ -261,7 +264,7 @@ def _feature_quality(feat: pd.DataFrame, feature_cols: list[str]) -> pd.DataFram
         corr_r = corr_p = np.nan
         if has_scipy:
             common = s.index.intersection(fut_ret.dropna().index)
-            if len(common) >= 30:
+            if len(common) >= 5:
                 corr_r, corr_p = sp_stats.spearmanr(s.loc[common], fut_ret.loc[common])
 
         rows.append({
@@ -276,6 +279,8 @@ def _feature_quality(feat: pd.DataFrame, feature_cols: list[str]) -> pd.DataFram
             "signal_p05":        bool(np.isfinite(corr_p) and corr_p < 0.05),
         })
 
+    if not rows:
+        return pd.DataFrame(columns=["mean", "std", "skew", "excess_kurt", "cv", "spearman_r_1bar", "spearman_p_1bar", "signal_p05"])
     return pd.DataFrame(rows).set_index("feature")
 
 
@@ -396,23 +401,27 @@ def run_diagnostics(models_dir: str = "models", reveal_test: bool = False) -> No
     vecnorm_path = models_path / "vec_normalize.pkl"
     try:
         _, run_info = load_run_info(models_path)
-        # Prefer the best (eligible) checkpoint + its normalisation snapshot so
-        # diagnostics evaluate the SAME model that would be deployed — not the
-        # final (typically most-overfit) checkpoint.
         mp_key = "best_model_path" if "best_model_path" in run_info else "model_path"
         vp_key = "best_model_vecnorm_path" if "best_model_vecnorm_path" in run_info else "vecnorm_path"
-        model_path = resolve_sb3_model_path(run_info[mp_key], base_dir=models_path.parent)
-        vecnorm_path = resolve_project_path(run_info[vp_key], base_dir=models_path.parent)
+        model_path = resolve_sb3_model_path(run_info[mp_key], base_dir=models_path)
+        vecnorm_path = resolve_project_path(run_info[vp_key], base_dir=models_path)
         if mp_key == "best_model_path":
             print("  Evaluating best (eligible) walk-forward checkpoint.")
     except (FileNotFoundError, KeyError):
-        # Fallback for older runs before run_info.json existed.
         best_model_path = models_path / "best_model" / "best_model.zip"
         legacy_model_path = models_path / "ppo_xauusd_seed_42.zip"
         if best_model_path.exists():
             model_path = best_model_path
         elif legacy_model_path.exists():
             model_path = legacy_model_path
+        else:
+            # Recherche de n'importe quel fichier .zip dans models_path
+            zips = list(models_path.glob("*.zip"))
+            if zips:
+                model_path = zips[0]
+                pkls = list(models_path.glob("*vecnorm.pkl"))
+                if pkls:
+                    vecnorm_path = pkls[0]
 
     if model_path is None:
         print("  No trained model found. Run train_ppo.py first.")
@@ -478,11 +487,14 @@ def parse_args():
     parser.add_argument("--is-crypto", action="store_true", help="Active le calendrier de trading 24/7 pour crypto")
     parser.add_argument("--time-col", default=None, help="Nom de la colonne temporelle dans le CSV")
     parser.add_argument("--source-tz", default=None, help="Fuseau horaire d'origine")
+    parser.add_argument("--decision-tf", default=None, help="Timeframe de décision (ex: 5min, 15min, H1)")
+    parser.add_argument("--warmup-bars", type=int, default=None, help="Nombre de barres de warmup pour les indicateurs")
     parser.add_argument("--reveal-test", action="store_true", help="Révéler les diagnostics sur le test holdout")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
+    from config import CFG
     args = parse_args()
     if args.symbol:
         CFG.symbol = args.symbol
@@ -494,5 +506,9 @@ if __name__ == "__main__":
         CFG.time_col = args.time_col
     if args.source_tz:
         CFG.source_tz = args.source_tz
+    if args.decision_tf:
+        CFG.decision_timeframe = args.decision_tf
+    if args.warmup_bars is not None:
+        CFG.warmup_bars = args.warmup_bars
 
     run_diagnostics(models_dir=args.models_dir, reveal_test=args.reveal_test)

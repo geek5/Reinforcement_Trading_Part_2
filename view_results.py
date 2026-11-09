@@ -294,6 +294,8 @@ def _parse() -> argparse.Namespace:
     p.add_argument("--csv", "-c", default=None, help="Chemin vers le fichier CSV de bougies 1m")
     p.add_argument("--time-col", default=None, help="Nom de la colonne temporelle")
     p.add_argument("--source-tz", default=None, help="Fuseau horaire d'origine")
+    p.add_argument("--decision-tf", default=None, help="Timeframe de décision (ex: 5min, 15min, H1)")
+    p.add_argument("--warmup-bars", type=int, default=None, help="Nombre de barres de warmup pour les indicateurs")
     p.add_argument("--start",      default=None, help="Start date e.g. 2024-01-01")
     p.add_argument("--end",        default=None, help="End date   e.g. 2024-06-01")
     p.add_argument("--bars",       default=None, type=int,
@@ -319,6 +321,10 @@ if __name__ == "__main__":
         CFG.time_col = args.time_col
     if args.source_tz:
         CFG.source_tz = args.source_tz
+    if args.decision_tf:
+        CFG.decision_timeframe = args.decision_tf
+    if args.warmup_bars is not None:
+        CFG.warmup_bars = args.warmup_bars
 
     view_slice(
         start=args.start,

@@ -139,7 +139,7 @@ class ProjectConfig:
     # Embargo removes bars on each side of every split boundary.
     # EMA-200 (the longest lookback used) retains ~37% of a bar's weight after
     # 200 steps; 200-bar embargo makes cross-boundary leakage negligible.
-    split_embargo_bars: int = 200
+    split_embargo_bars: int = 20
 
     # Indicators/features.
     atr_period: int = 14

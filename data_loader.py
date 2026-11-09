@@ -166,13 +166,19 @@ def split_train_val_test(df: pd.DataFrame, train_frac=0.60, val_frac=0.20, embar
     Defaults match ProjectConfig. embargo_bars removes that many bars from each
     side of every split boundary to prevent EWM-based features from carrying
     training-period information into val/test observations.
+    Automatically caps embargo_bars on short series to avoid creating empty splits.
     """
     n = len(df)
     train_end = int(n * train_frac)
     val_end = int(n * (train_frac + val_frac))
-    train = df.iloc[:max(train_end - embargo_bars, 0)]
-    val = df.iloc[min(train_end + embargo_bars, n):max(val_end - embargo_bars, 0)]
-    test = df.iloc[min(val_end + embargo_bars, n):]
+
+    # Sécurité pour les séries courtes : limiter l'embargo à une fraction de la taille de val
+    val_raw_len = max(val_end - train_end, 0)
+    effective_embargo = min(embargo_bars, max(val_raw_len // 4, 1)) if val_raw_len > 0 else 0
+
+    train = df.iloc[:max(train_end - effective_embargo, 0)]
+    val = df.iloc[min(train_end + effective_embargo, n):max(val_end - effective_embargo, 0)]
+    test = df.iloc[min(val_end + effective_embargo, n):]
     return train, val, test
 
 

@@ -1093,6 +1093,7 @@ def parse_args():
     parser.add_argument("--mode", choices=["single", "sliding", "walk_forward"], default="sliding",
                         help="Mode d'entraînement : single (split simple), sliding (walk-forward glissant), walk_forward (par blocs)")
     parser.add_argument("--timesteps", type=int, default=None, help="Nombre total de timesteps")
+    parser.add_argument("--eval-freq", type=int, default=None, help="Fréquence d'évaluation des checkpoints (timesteps)")
     parser.add_argument("--out-dir", "-o", default="models", help="Répertoire de sortie des modèles")
     parser.add_argument("--n-envs", type=int, default=4, help="Nombre d'environnements parallèles")
     return parser.parse_args()
@@ -1116,8 +1117,11 @@ if __name__ == "__main__":
         CFG.decision_timeframe = args.decision_tf
 
     if args.mode == "single":
+        ts = args.timesteps or 2_000_000
+        ef = args.eval_freq or min(50_000, max(1_000, ts // 10))
         train(
-            total_timesteps=args.timesteps or 2_000_000,
+            total_timesteps=ts,
+            eval_freq=ef,
             out_dir=args.out_dir,
             n_envs=args.n_envs,
             model_name=args.model_name,
