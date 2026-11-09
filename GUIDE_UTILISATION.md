@@ -16,6 +16,7 @@ Ce guide détaille pas à pas la procédure complète pour :
 - [Étape 4 : Visualisation de la courbe d'apprentissage](#étape-4--visualisation-de-la-courbe-dapprentissage)
 - [Étape 5 : Diagnostics complets d'entraînement](#étape-5--diagnostics-complets-dentraînement)
 - [Étape 6 : Visualisation des trades et chandeliers](#étape-6--visualisation-des-trades-et-chandeliers)
+- [Étape 7 : Évaluation systématique des biais directionnels A, B, C, D](#étape-7--évaluation-systématique-des-biais-directionnels-a-b-c-d)
 - [Grille de lecture : comment savoir si la stratégie fonctionne](#grille-de-lecture--comment-savoir-si-la-stratégie-fonctionne)
 
 ---
@@ -184,6 +185,34 @@ python view_results.py \
 - **Lignes horizontales pointillées** : Brackets dynamiques de TP (vert) et SL (rouge).
 - **Cercles verts** : Sorties gagnantes ayant touché le Take-Profit.
 - **Croix rouges** : Sorties stoppées ayant touché le Stop-Loss.
+
+---
+
+## Étape 7 : Évaluation systématique des biais directionnels A, B, C, D
+
+Le script `evaluate_biases.py` évalue automatiquement et de manière causale (hors-échantillon avec frais et slippage) chaque sous-biais directionnel en heure `America/New_York` :
+- **Biais A** : Bougie journalière précédente (A1 Bullish, A2 Bearish, A3 Neutral)
+- **Biais B** : Bougie 6H précédente RTH (Regular Trading Hours de la veille)
+- **Biais C** : Sweeps de liquidité entre 07:00 et 09:30 NY (PDH, PDL, Session High/Low précédent)
+- **Biais D** : Sweeps de liquidité entre 09:30 et 10:00 NY (PDH, PDL, Session Pre-market 07:00–09:30)
+
+### Commande
+```bash
+python evaluate_biases.py \
+  --symbol BTC/USDT \
+  --csv data/binance_BTCUSDT_1m.csv \
+  --is-crypto \
+  --source-tz UTC \
+  --time-col Time \
+  --decision-tf 15min \
+  --out-dir outputs/bias_eval
+```
+
+Le script teste :
+1. Chaque sous-biais individuellement.
+2. Les groupements d'acheteurs et de vendeurs.
+3. Les confluences (ex. 2 biais alignés requis, interdiction formelle de trader en cas de contradiction).
+4. La comparaison avec et sans filtre directionnel.
 
 ---
 

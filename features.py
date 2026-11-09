@@ -33,22 +33,28 @@ def rsi(close: pd.Series, n: int = 14) -> pd.Series:
 
 def add_time_features(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
-    idx_local = out.index
-    idx_utc = idx_local.tz_convert("UTC") if idx_local.tz is not None else idx_local.tz_localize("UTC")
+    idx = out.index
+    # Utilisation systématique de America/New_York avec gestion automatique de l'heure d'été/hiver (DST)
+    if idx.tz is None:
+        idx_ny = idx.tz_localize("America/New_York", ambiguous="infer", nonexistent="shift_forward")
+    else:
+        idx_ny = idx.tz_convert("America/New_York")
 
-    minute_of_day = idx_local.hour * 60 + idx_local.minute
-    day_of_week = idx_local.dayofweek
+    minute_of_day = idx_ny.hour * 60 + idx_ny.minute
+    # Utilise day_of_week (compatible pandas 2 et 3)
+    day_of_week = getattr(idx_ny, "day_of_week", idx_ny.dayofweek)
 
     out["tod_sin"] = np.sin(2 * np.pi * minute_of_day / 1440.0)
     out["tod_cos"] = np.cos(2 * np.pi * minute_of_day / 1440.0)
     out["dow_sin"] = np.sin(2 * np.pi * day_of_week / 7.0)
     out["dow_cos"] = np.cos(2 * np.pi * day_of_week / 7.0)
 
-    h_utc = idx_utc.hour
-    out["session_asia"] = ((h_utc >= 0) & (h_utc < 7)).astype(int)
-    out["session_london"] = ((h_utc >= 7) & (h_utc < 16)).astype(int)
-    out["session_newyork"] = ((h_utc >= 13) & (h_utc < 22)).astype(int)
-    out["session_london_ny_overlap"] = ((h_utc >= 13) & (h_utc < 16)).astype(int)
+    # Heures en temps de New York (EST/EDT)
+    h_ny = idx_ny.hour
+    out["session_asia"] = ((h_ny >= 19) | (h_ny < 2)).astype(int)
+    out["session_london"] = ((h_ny >= 3) & (h_ny < 12)).astype(int)
+    out["session_newyork"] = ((h_ny >= 8) & (h_ny < 17)).astype(int)
+    out["session_london_ny_overlap"] = ((h_ny >= 8) & (h_ny < 12)).astype(int)
     return out
 
 
@@ -160,6 +166,16 @@ def add_stationary_features(df: pd.DataFrame, atr_period: int = 14, rsi_period: 
 
     out = add_time_features(out)
 
+    # ── Intégration des Biais Directionnels A, B, C, D (America/New_York) ───────
+    try:
+        from directional_biases import compute_directional_biases
+        biases = compute_directional_biases(out)
+        for col in biases.columns:
+            out[col] = biases[col]
+        bias_cols = [c for c in biases.columns if c.startswith("bias_") or c == "net_bias_score"]
+    except Exception:
+        bias_cols = []
+
     # Observation columns for ML/RL. Inclut les signaux de détection Big Trades / Baleines
     feature_cols = [
         "close_ema20_atr", "close_ema50_atr", "close_ema200_atr",
@@ -169,6 +185,7 @@ def add_stationary_features(df: pd.DataFrame, atr_period: int = 14, rsi_period: 
         "range_atr", "upper_wick_ratio", "lower_wick_ratio",   # body_atr (|r|=1.00) dropped
         "whale_buy_zscore", "whale_sell_zscore", "whale_net_vol_ratio", "whale_buy_tier", "whale_sell_tier",
         "ret1_atr", "ret2_atr", "ret3_atr", "ret4_atr", "ret5_atr",
+        *bias_cols,
         "tod_sin", "tod_cos", "dow_sin", "dow_cos",
         "session_asia", "session_london", "session_newyork", "session_london_ny_overlap",
     ]
