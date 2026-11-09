@@ -98,7 +98,7 @@ def load_folds():
 
 
 def build_env(decision_df, m1_df, feature_cols, randomize_start: bool = False,
-              episode_steps: int | None = None):
+              episode_steps: int | None = None, bias_filter: Any = None):
     env = BracketTradingEnv(
         decision_df,
         m1_df,
@@ -114,6 +114,7 @@ def build_env(decision_df, m1_df, feature_cols, randomize_start: bool = False,
         reward_mtm_weight=CFG.reward_mtm_weight,
         randomize_start=randomize_start,
         max_episode_steps=episode_steps,
+        bias_filter=bias_filter,
     )
     return Monitor(env)
 
@@ -1090,6 +1091,7 @@ def parse_args():
     parser.add_argument("--source-tz", default=None, help="Fuseau horaire d'origine (ex: UTC ou Europe/Helsinki)")
     parser.add_argument("--decision-tf", default=None, help="Timeframe de décision (ex: 5min, 15min, H1)")
     parser.add_argument("--model-name", "-m", default=None, help="Nom personnalisé pour le modèle sauvegardé")
+    parser.add_argument("--use-bias-filter", action="store_true", help="Active le filtre directionnel strict basé sur les biais")
     parser.add_argument("--mode", choices=["single", "sliding", "walk_forward"], default="sliding",
                         help="Mode d'entraînement : single (split simple), sliding (walk-forward glissant), walk_forward (par blocs)")
     parser.add_argument("--timesteps", type=int, default=None, help="Nombre total de timesteps")

@@ -57,9 +57,11 @@ class BracketTradingEnv(gym.Env):
         holding_penalty: float = 0.00002,
         reward_mtm_weight: float = 0.01,
         max_episode_steps: Optional[int] = None,
+        bias_filter: Optional[Any] = None,
         randomize_start: bool = False,
     ):
         super().__init__()
+        self.bias_filter = bias_filter
         self.decision_df = decision_df.dropna(subset=feature_cols + ["atr"]).copy()
         self.m1_df = m1_df.copy()
         self.feature_cols = list(feature_cols)
@@ -266,6 +268,16 @@ class BracketTradingEnv(gym.Env):
         row = self._current_row()
         close = float(row["Close"])
 
+        # ── Filtrage directionnel par les biais (Futures trading filter) ──────
+        # Permet uniquement les positions alignées avec le biais actif.
+        # Les sorties de position et la gestion du risque restent toujours actives.
+        if self.bias_filter is not None and desired_direction != 0:
+            allowed = self.bias_filter.get_allowed_direction(self, feature_cols=self.feature_cols)
+            if allowed is not None:
+                # Si interdiction de trader (0) ou direction opposée au biais : entrée bloquée
+                if allowed == 0 or (allowed == 1 and desired_direction == -1) or (allowed == -1 and desired_direction == 1):
+                    desired_direction = 0
+
         # Handle explicit close or flip at current decision close.
         if self.position.direction != 0:
             current_dir = self.position.direction
@@ -273,7 +285,9 @@ class BracketTradingEnv(gym.Env):
                 self._close_position(close, self._current_time(), "manual_close")
             elif desired_direction != current_dir:
                 self._close_position(close, self._current_time(), "flip_close")
-                self._open_position(desired_direction, sl_idx, tp_idx)
+                # Si une nouvelle position inverse est autorisée par le biais
+                if desired_direction != 0:
+                    self._open_position(desired_direction, sl_idx, tp_idx)
 
         # Fresh entry if flat and action wants exposure.
         if self.position.direction == 0 and desired_direction != 0:

@@ -136,3 +136,36 @@ def test_evaluate_biases_benchmark_end_to_end():
     assert "00_No_Filter" in bench["filter_variant"].values
     assert "A1_Daily_Bullish_Only" in bench["filter_variant"].values
     assert "Confluence_2_Signals" in bench["filter_variant"].values
+
+
+def test_env_bracket_directional_bias_restriction():
+    from env_bracket import BracketTradingEnv
+    from directional_biases import DirectionalBiasFilter
+
+    times = pd.date_range("2024-01-01 10:00:00", periods=10, freq="15min", tz="America/New_York")
+    df = pd.DataFrame({
+        "Open": 50000.0, "High": 50050.0, "Low": 49950.0, "Close": 50000.0, "Volume": 100.0,
+        "atr": 50.0,
+        "bias_a1_daily_bull": 1.0,
+        "bias_a2_daily_bear": 0.0,
+    }, index=times)
+
+    m1_times = pd.date_range("2024-01-01 10:00:00", periods=150, freq="1min", tz="America/New_York")
+    m1_df = pd.DataFrame({
+        "Open": 50000.0, "High": 50010.0, "Low": 49990.0, "Close": 50000.0, "Volume": 1.0
+    }, index=m1_times)
+
+    feature_cols = ["bias_a1_daily_bull", "bias_a2_daily_bear"]
+
+    # Bullish filter: should allow LONG (action 1) and block SHORT (action 2)
+    b_filter = DirectionalBiasFilter(use_a1=True, use_a2=True, require_confluence=1, mode="filter")
+    env = BracketTradingEnv(df, m1_df, feature_cols, bias_filter=b_filter)
+    env.reset()
+
+    # Attempt short: should be blocked by filter (remains direction 0)
+    obs, reward, terminated, truncated, info = env.step([2, 0, 0])
+    assert env.position.direction == 0
+
+    # Attempt long: should be allowed (direction becomes 1)
+    obs, reward, terminated, truncated, info = env.step([1, 0, 0])
+    assert env.position.direction == 1

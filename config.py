@@ -58,8 +58,8 @@ class ProjectConfig:
     # Nom de la colonne temporelle dans le CSV ("Time (EET)", "Time", "Timestamp", etc.)
     time_col: str = "Time (EET)"
 
-    # Fuseau horaire d'origine des données ("Europe/Helsinki" pour MT4/MT5 EET, "UTC" pour CCXT / crypto)
-    source_tz: str = "Europe/Helsinki"
+    # Fuseau horaire global du projet pour toutes les sessions et calculs ("America/New_York" par défaut)
+    source_tz: str = "America/New_York"
 
     # MT4/MT5-style M1 exports usually timestamp each row at candle OPEN.
     # Internally the project indexes bars by CLOSE time so a decision timestamp
