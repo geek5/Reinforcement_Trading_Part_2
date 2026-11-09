@@ -1,23 +1,34 @@
 # Guide Complet d'Utilisation : Entraînement, Exécution et Interprétation des Résultats
 
 Ce guide détaille pas à pas la procédure complète pour :
-1. Télécharger des données historiques 1 minute via CCXT.
-2. Exécuter le pipeline de feature engineering (avec détection des **Big Trades / Baleines**).
-3. Entraîner l'agent RL (PPO) avec nom et date personnalisés via la ligne de commande.
-4. Visualiser et interpréter la courbe d'apprentissage interactive.
-5. Analyser les diagnostics d'overfitting et visualiser les trades sur les chandeliers.
+1. Configurer le fuseau horaire global `America/New_York` avec gestion automatique de l'heure d'été et d'hiver (DST).
+2. Télécharger des données historiques 1 minute via CCXT pour vos contrats futures / cryptos / devises.
+3. Exécuter le pipeline de feature engineering (avec détection des **Big Trades / Baleines** et des **biais directionnels A, B, C, D**).
+4. Entraîner l'agent RL (PPO) avec nom, date personnalisés et filtrage directionnel strict des futures.
+5. Visualiser et interpréter la courbe d'apprentissage interactive.
+6. Analyser les diagnostics d'overfitting et visualiser les trades sur les chandeliers.
+7. Évaluer systématiquement l'impact des biais directionnels hors-échantillon.
 
 ---
 
 ## Sommaire
+- [Fuseau horaire global : America/New_York et gestion DST](#fuseau-horaire-global--americanew_york-et-gestion-dst)
 - [Étape 1 : Téléchargement des bougies 1m via CCXT](#étape-1--téléchargement-des-bougies-1m-via-ccxt)
 - [Étape 2 : Validation des données et de la baseline](#étape-2--validation-des-données-et-de-la-baseline)
-- [Étape 3 : Entraînement de l'agent RL (PPO)](#étape-3--entraînement-de-lagent-rl-ppo)
+- [Étape 3 : Entraînement de l'agent RL (PPO) avec filtrage des biais](#étape-3--entraînement-de-lagent-rl-ppo-avec-filtrage-des-biais)
 - [Étape 4 : Visualisation de la courbe d'apprentissage](#étape-4--visualisation-de-la-courbe-dapprentissage)
 - [Étape 5 : Diagnostics complets d'entraînement](#étape-5--diagnostics-complets-dentraînement)
 - [Étape 6 : Visualisation des trades et chandeliers](#étape-6--visualisation-des-trades-et-chandeliers)
 - [Étape 7 : Évaluation systématique des biais directionnels A, B, C, D](#étape-7--évaluation-systématique-des-biais-directionnels-a-b-c-d)
 - [Grille de lecture : comment savoir si la stratégie fonctionne](#grille-de-lecture--comment-savoir-si-la-stratégie-fonctionne)
+
+---
+
+## Fuseau horaire global : America/New_York et gestion DST
+
+Le projet utilise de manière centralisée le fuseau horaire **`America/New_York`** (EST/EDT) :
+- **Gestion automatique DST** : Les passages à l'heure d'été (EDT, UTC-4) et à l'heure d'hiver (EST, UTC-5) sont calculés dynamiquement sans ambiguïté.
+- **Préservation UTC** : Les données sources en UTC ou timestamps Unix sont converties proprement vers `America/New_York` pour tous les calculs de sessions (Asie, Londres, New York RTH 09:30-16:00, fenêtres de sweep 07:00-09:30 et 09:30-10:00).
 
 ---
 
@@ -75,14 +86,15 @@ python run_pipeline.py \
 
 ---
 
-## Étape 3 : Entraînement de l'agent RL (PPO)
+## Étape 3 : Entraînement de l'agent RL (PPO) avec filtrage des biais
 
 Le script `train_ppo.py` gère l'apprentissage par renforcement. Vous pouvez personnaliser :
 - Le symbole (`--symbol`)
 - Le fichier source (`--csv`)
 - Le mode de marché (`--is-crypto` pour calendrier continu 24/7)
-- Le fuseau horaire (`--source-tz UTC`)
-- Le nom du modèle sauvegardé (`--model-name`), qui est automatiquement combiné avec le symbole et un horodatage (`YYYYMMDD_HHMMSS`).
+- Le fuseau horaire (`--source-tz America/New_York` ou `UTC`)
+- Le nom du modèle sauvegardé (`--model-name`), combiné automatiquement avec le symbole et un horodatage (`YYYYMMDD_HHMMSS`).
+- Le filtrage directionnel strict (`--use-bias-filter`) : PPO ne peut ouvrir que dans le sens autorisé par le biais actif (Longs si bullish, Shorts si bearish, aucun trade si conflit).
 
 ### Commande
 ```bash
@@ -95,6 +107,7 @@ python train_ppo.py \
   --decision-tf 15min \
   --model-name MonAgentBTC \
   --mode single \
+  --use-bias-filter \
   --timesteps 300000 \
   --n-envs 4
 ```

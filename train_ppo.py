@@ -29,10 +29,10 @@ from model_artifacts import load_run_info
 
 # ── Pickle-safe factory for SubprocVecEnv ────────────────────────────────────
 # Must be at module level (not a lambda) so subprocesses can import it.
-def _spawn_train_env(decision_df, m1_df, feature_cols, episode_steps):
+def _spawn_train_env(decision_df, m1_df, feature_cols, episode_steps, bias_filter=None):
     """Called inside each worker process to build one training environment."""
     return build_env(decision_df, m1_df, feature_cols,
-                     randomize_start=True, episode_steps=episode_steps)
+                     randomize_start=True, episode_steps=episode_steps, bias_filter=bias_filter)
 
 
 def _slice_m1_for_decision_window(m1_df, decision_df):
@@ -311,6 +311,7 @@ def train(
     device: str = "auto",
     reveal_test: bool = False,
     model_name: str | None = None,
+    bias_filter: Any = None,
     # Inject pre-built splits (used by train_walk_forward to train one fold).
     # When None, load the single chronological split via load_datasets().
     datasets: tuple | None = None,
@@ -340,7 +341,7 @@ def train(
         # partial() wraps a module-level function so it is pickle-safe on Windows.
         from stable_baselines3.common.vec_env import SubprocVecEnv
         env_fns = [
-            partial(_spawn_train_env, train_feat, train_m1, feature_cols, train_episode_steps)
+            partial(_spawn_train_env, train_feat, train_m1, feature_cols, train_episode_steps, bias_filter)
             for _ in range(n_envs)
         ]
         start_method = "spawn" if sys.platform == "win32" else "forkserver"
@@ -350,7 +351,7 @@ def train(
         print("Training envs : 1 (DummyVecEnv — set n_envs=4 for ~4x speedup)")
         train_env_raw = DummyVecEnv([
             lambda: build_env(train_feat, train_m1, feature_cols,
-                              randomize_start=True, episode_steps=train_episode_steps)
+                              randomize_start=True, episode_steps=train_episode_steps, bias_filter=bias_filter)
         ])
 
     train_env = VecNormalize(train_env_raw, norm_obs=True, norm_reward=True, clip_obs=10.0)
@@ -1118,6 +1119,12 @@ if __name__ == "__main__":
     if args.decision_tf:
         CFG.decision_timeframe = args.decision_tf
 
+    bias_filter_instance = None
+    if args.use_bias_filter:
+        from directional_biases import DirectionalBiasFilter
+        bias_filter_instance = DirectionalBiasFilter(mode="filter")
+        print("Filtre directionnel strict activé (Longs/Shorts limités au sens du biais).")
+
     if args.mode == "single":
         ts = args.timesteps or 2_000_000
         ef = args.eval_freq or min(50_000, max(1_000, ts // 10))
@@ -1127,6 +1134,7 @@ if __name__ == "__main__":
             out_dir=args.out_dir,
             n_envs=args.n_envs,
             model_name=args.model_name,
+            bias_filter=bias_filter_instance,
         )
     elif args.mode == "walk_forward":
         train_walk_forward(
