@@ -143,7 +143,11 @@ def test_custom_instrument_config_and_pipeline(tmp_path: Path):
 
     feat, feature_cols = prepare_feature_frame(resampled, warmup_bars=200)
     assert len(feat) > 0
-    assert len(feature_cols) == 25
+    assert "whale_buy_zscore" in feature_cols
+    assert "whale_sell_zscore" in feature_cols
+    assert "whale_net_vol_ratio" in feature_cols
+    assert "whale_buy_tier" in feature_cols
+    assert "whale_sell_tier" in feature_cols
 
 
 def test_plot_learning_curve(tmp_path: Path):
@@ -220,3 +224,32 @@ def test_cli_parsing_and_model_slug():
         assert d_args.symbol == "BTC/USDT"
     finally:
         sys.argv = orig_argv
+
+
+def test_big_trades_whale_leakage():
+    from leakage_checks import assert_feature_stability_when_future_appended
+    from features import add_stationary_features
+
+    n_bars = 300
+    times = pd.date_range("2024-01-01", periods=n_bars, freq="5min", tz="UTC")
+    np.random.seed(42)
+    closes = 40000.0 + np.cumsum(np.random.normal(0, 10, n_bars))
+    highs = closes + np.random.uniform(5, 20, n_bars)
+    lows = closes - np.random.uniform(5, 20, n_bars)
+    opens = closes + np.random.uniform(-5, 5, n_bars)
+    vols = np.random.uniform(10, 100, n_bars)
+
+    # Spike a whale buy and sell
+    vols[50] = 5000.0
+    vols[150] = 6000.0
+
+    df = pd.DataFrame({
+        "Open": opens, "High": highs, "Low": lows, "Close": closes, "Volume": vols
+    }, index=times)
+
+    _, feature_cols = add_stationary_features(df)
+    whale_cols = [c for c in feature_cols if "whale" in c]
+    assert len(whale_cols) == 5
+
+    # Check causality guardrail: no future leakage
+    assert assert_feature_stability_when_future_appended(df, whale_cols, cut_index=100)

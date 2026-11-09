@@ -119,21 +119,55 @@ def add_stationary_features(df: pd.DataFrame, atr_period: int = 14, rsi_period: 
     out["upper_wick_ratio"] = (out["High"] - out[["Open", "Close"]].max(axis=1)) / candle_range
     out["lower_wick_ratio"] = (out[["Open", "Close"]].min(axis=1) - out["Low"]) / candle_range
 
+    # ── Big Trades / Whale Volume Anomalies (d'après l'indicateur HK) ───────────
+    # Décomposition intrabarre du volume :
+    # Les achats poussent le prix de Low à Close : (Close - Low) / (High - Low) * Volume
+    # Les ventes poussent le prix de High à Close : (High - Close) / (High - Low) * Volume
+    range_safe = candle_range.fillna(0.0)
+    vol = out["Volume"].fillna(0.0)
+    raw_buy_vol = np.where(range_safe > 0, (out["Close"] - out["Low"]) / (range_safe + eps) * vol, 0.0)
+    raw_sell_vol = np.where(range_safe > 0, (out["High"] - out["Close"]) / (range_safe + eps) * vol, 0.0)
+    s_buy = pd.Series(raw_buy_vol, index=out.index)
+    s_sell = pd.Series(raw_sell_vol, index=out.index)
+
+    # Statistiques causales sur les bougies précédentes (lookback = 5, décalé de 1 bar)
+    bt_lookback = 5
+    avg_buy_vol = s_buy.shift(1).rolling(bt_lookback, min_periods=bt_lookback).mean()
+    std_buy_vol = s_buy.shift(1).rolling(bt_lookback, min_periods=bt_lookback).std().replace(0, np.nan)
+    avg_sell_vol = s_sell.shift(1).rolling(bt_lookback, min_periods=bt_lookback).mean()
+    std_sell_vol = s_sell.shift(1).rolling(bt_lookback, min_periods=bt_lookback).std().replace(0, np.nan)
+
+    # Z-scores stationnaires des anomalies de volume acheteur et vendeur
+    out["whale_buy_zscore"] = ((s_buy - avg_buy_vol) / (std_buy_vol + eps)).fillna(0.0).clip(-10.0, 10.0)
+    out["whale_sell_zscore"] = ((s_sell - avg_sell_vol) / (std_sell_vol + eps)).fillna(0.0).clip(-10.0, 10.0)
+    # Ratio net de pression de volume baleine entre -1 et +1
+    out["whale_net_vol_ratio"] = ((s_buy - s_sell) / (vol + eps)).fillna(0.0).clip(-1.0, 1.0)
+
+    # Tiers discrets de Big Trades (3.0 sigma = T1, 4.5 sigma = T2, 6.0 sigma = T3)
+    buy_t1 = (out["whale_buy_zscore"] > 3.0).astype(float)
+    buy_t2 = (out["whale_buy_zscore"] > 4.5).astype(float)
+    buy_t3 = (out["whale_buy_zscore"] > 6.0).astype(float)
+    out["whale_buy_tier"] = (buy_t1 + buy_t2 + buy_t3) / 3.0  # Normalisé entre 0 et 1
+
+    sell_t1 = (out["whale_sell_zscore"] > 3.0).astype(float)
+    sell_t2 = (out["whale_sell_zscore"] > 4.5).astype(float)
+    sell_t3 = (out["whale_sell_zscore"] > 6.0).astype(float)
+    out["whale_sell_tier"] = (sell_t1 + sell_t2 + sell_t3) / 3.0  # Normalisé entre 0 et 1
+
     # Microstructure / recent moves.
     for k in range(1, 6):
         out[f"ret{k}_atr"] = (out["Close"] - out["Close"].shift(k)) / (a + eps)
 
     out = add_time_features(out)
 
-    # Observation columns for ML/RL.  Four highly-collinear features were
-    # dropped in the 2026-06-02 audit (see DROPPED notes above): ema50_slope5_atr,
-    # rsi_centered, roc5_atr, body_atr.  25 features remain.
+    # Observation columns for ML/RL. Inclut les signaux de détection Big Trades / Baleines
     feature_cols = [
         "close_ema20_atr", "close_ema50_atr", "close_ema200_atr",
         "ema20_ema50_atr",                       # ema50_slope5_atr dropped (|r|=0.96)
         "macd_hist_atr", "roc20_atr",            # rsi_centered (|r|=0.98), roc5_atr (|r|=1.00) dropped
         "atr_close", "atr_fast_slow", "bb_width_close",
         "range_atr", "upper_wick_ratio", "lower_wick_ratio",   # body_atr (|r|=1.00) dropped
+        "whale_buy_zscore", "whale_sell_zscore", "whale_net_vol_ratio", "whale_buy_tier", "whale_sell_tier",
         "ret1_atr", "ret2_atr", "ret3_atr", "ret4_atr", "ret5_atr",
         "tod_sin", "tod_cos", "dow_sin", "dow_cos",
         "session_asia", "session_london", "session_newyork", "session_london_ny_overlap",
