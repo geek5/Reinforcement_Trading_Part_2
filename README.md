@@ -30,78 +30,124 @@ It gives you a complete research pipeline:
 pip install -r requirements.txt
 ```
 
-### Télécharger des bougies 1m via CCXT (Custom instrument)
+## Guide des commandes et exemples d'utilisation (CLI)
 
-Vous pouvez télécharger l'historique 1m pour n'importe quel actif crypto supporté par CCXT (Binance, Bybit, OKX, Kraken, etc.) :
+Le projet permet de tout configurer directement par **options en ligne de commande** sans avoir à modifier le code, que ce soit pour le téléchargement, le pipeline de test, l'entraînement RL ou la visualisation de la courbe d'apprentissage.
+
+---
+
+### 1. Télécharger des bougies 1m via CCXT (`download_ccxt.py`)
+
+Téléchargez des données historiques 1-minute depuis n'importe quelle plateforme crypto (Binance, Bybit, OKX, Kraken, Coinbase, etc.) :
 
 ```bash
-# Exemple : Télécharger 90 jours de bougies 1m BTC/USDT depuis Binance
+# Exemple 1 : Télécharger les 90 derniers jours de BTC/USDT depuis Binance
 python download_ccxt.py --symbol BTC/USDT --exchange binance --days 90
 
-# Exemple : Télécharger une plage de dates spécifique pour ETH/USDT
-python download_ccxt.py --symbol ETH/USDT --exchange binance --since 2023-01-01 --until 2024-01-01 --output data/ETHUSDT_1m.csv
+# Exemple 2 : Télécharger une année complète d'ETH/USDT avec chemin de sortie personnalisé
+python download_ccxt.py --symbol ETH/USDT --exchange binance --since 2023-01-01 --until 2024-01-01 --output data/binance_ETHUSDT_1m.csv
+
+# Exemple 3 : Télécharger SOL/USDT sur Bybit pour les 180 derniers jours
+python download_ccxt.py --symbol SOL/USDT --exchange bybit --days 180
+
+# Exemple 4 : Télécharger EUR/USD sur Kraken pour un test
+python download_ccxt.py --symbol EUR/USD --exchange kraken --days 30
 ```
 
-### Configuration d'un instrument custom dans `config.py`
+---
 
-Pour utiliser un instrument personnalisé (par ex. `BTC/USDT`), modifiez simplement `config.py` :
+### 2. Entraîner l'agent RL avec PPO (`train_ppo.py`)
 
-```python
-CFG.symbol = "BTC/USDT"
-CFG.is_crypto_24_7 = True                         # Active le calcul annualisé 24/7 (365 jours/an)
-CFG.csv_path = Path("data/binance_BTCUSDT_1m.csv")
-CFG.time_col = "Time"                             # Colonne générée par download_ccxt.py
-CFG.source_tz = "UTC"                             # UTC pour CCXT
-CFG.spread_price = 1.0                            # Ajuster selon l'actif
-CFG.slippage_price = 0.5
-CFG.commission_per_trade = 0.0                    # Ou frais d'échange
-```
-
-Pour XAUUSD ou le Forex classique :
-
-Put your full file here (the long Bid history is the primary dataset; the short
-Ask file is kept as a fast smoke-test fallback — switch between them in `config.py`):
-
-```text
-data/XAUUSD_1 Min_Bid_2003.05.05_2026.05.31.csv   # primary (~23 years)
-data/XAUUSD_1 Min_Ask_2020.01.09_2026.01.15.csv   # smoke-test fallback (~6 years)
-```
-
-Then run:
+Les options en ligne de commande permettent de spécifier :
+- L'instrument (`--symbol`)
+- Le fichier CSV (`--csv`)
+- Le mode de marché (`--is-crypto` pour calendrier continu 24/7)
+- Le fuseau horaire (`--source-tz UTC`)
+- Le nom du modèle sauvegardé (`--model-name`), qui est automatiquement combiné avec le symbole et la date/heure (`YYYYMMDD_HHMMSS`)
 
 ```bash
+# Exemple 1 : Entraînement sur BTC/USDT avec nom personnalisé et horodatage automatique
+python train_ppo.py --symbol BTC/USDT --csv data/binance_BTCUSDT_1m.csv --is-crypto --source-tz UTC --time-col Time --decision-tf 15min --model-name MonModeleBTC --mode single --timesteps 500000
+
+# Exemple 2 : Entraînement glissant (sliding walk-forward) sur ETH/USDT
+python train_ppo.py --symbol ETH/USDT --csv data/binance_ETHUSDT_1m.csv --is-crypto --source-tz UTC --time-col Time --decision-tf 5min --mode sliding --timesteps 1000000
+
+# Exemple 3 : Entraînement par blocs walk-forward sur instrument classique (XAUUSD)
+python train_ppo.py --symbol XAUUSD --csv "data/XAUUSD_1 Min_Bid_2003.05.05_2026.05.31.csv" --time-col "Time (EET)" --source-tz Europe/Helsinki --decision-tf H1 --model-name XAU_H1_Agent --mode walk_forward
+
+# Exemple 4 : Test rapide (smoke-test) avec 1 seul environnement CPU et budget réduit
+python train_ppo.py --symbol BTC/USDT --csv data/binance_BTCUSDT_1m.csv --is-crypto --source-tz UTC --decision-tf 5min --timesteps 50000 --n-envs 1 --mode single
+```
+
+---
+
+### 3. Exécuter le pipeline de validation (`run_pipeline.py`)
+
+Exécute le resampling, la création des features, la vérification de fuite temporelle, et l'optimisation des baselines avec un instrument personnalisé :
+
+```bash
+# Exemple 1 : Pipeline pour BTC/USDT en barres de décision 15min
+python run_pipeline.py --symbol BTC/USDT --csv data/binance_BTCUSDT_1m.csv --is-crypto --source-tz UTC --time-col Time --decision-tf 15min --out-dir outputs/btc_15m
+
+# Exemple 2 : Pipeline pour SOL/USDT en 5min
+python run_pipeline.py --symbol SOL/USDT --csv data/bybit_SOLUSDT_1m.csv --is-crypto --source-tz UTC --decision-tf 5min
+
+# Exemple 3 : Pipeline standard sur XAUUSD
 python run_pipeline.py
 ```
 
-This keeps the test split sealed and writes validation-only artifacts, including
-a `walk_forward_baseline.csv` showing baseline stability across the rolling folds.
+---
 
-Train the RL agent with walk-forward validation (one model per fold, aggregate
-out-of-sample report; the final fold is saved as the production model):
+### 4. Visualiser la courbe d'apprentissage (`plot_learning_curve.py`)
+
+Affiche le graphique interactif Plotly montrant les récompenses de train vs validation, les drawdowns max %, et le meilleur checkpoint sélectionné :
 
 ```bash
-python train_ppo.py            # == train_ppo.train_walk_forward()
+# Exemple 1 : Détection automatique du run le plus récent et ouverture dans le navigateur
+python plot_learning_curve.py
+
+# Exemple 2 : Inspecter un fold walk-forward spécifique (ex. fold 1)
+python plot_learning_curve.py --fold 1
+
+# Exemple 3 : Sauvegarder en fichier HTML sans ouvrir le navigateur
+python plot_learning_curve.py --output outputs/courbe_apprentissage.html --no-browser
+
+# Exemple 4 : Spécifier explicitement un fichier consistency_evals.csv
+python plot_learning_curve.py --file models/walk_forward/fold_2/eval_logs/consistency_evals.csv
 ```
 
-When you are ready for the one-time holdout reveal, run:
+---
+
+### 5. Diagnostics complets d'entraînement (`training_diagnostics.py`)
+
+Analyse la courbe d'apprentissage, la qualité des features (stationnarité, corrélation) et le surapprentissage :
 
 ```bash
-python final_holdout_eval.py
-```
-
-### Visualiser la courbe d'apprentissage (Learning Curve)
-
-Pour afficher et exporter la courbe d'apprentissage interactive (récompenses train/val, drawdowns, score de consistance et meilleur checkpoint) :
-
-```bash
-python plot_learning_curve.py                     # Détecte automatiquement le dernier run
-python plot_learning_curve.py --fold 1            # Courbe d'apprentissage du fold 1
-python plot_learning_curve.py --output curve.html # Enregistre en fichier HTML interactif
-```
-
-Vous pouvez aussi exécuter le diagnostic complet :
-```bash
+# Exemple 1 : Diagnostics sur le modèle par défaut dans models/
 python training_diagnostics.py
+
+# Exemple 2 : Diagnostics sur un modèle entraîné sur un instrument custom
+python training_diagnostics.py --models-dir models --symbol BTC/USDT --csv data/binance_BTCUSDT_1m.csv --is-crypto --source-tz UTC --time-col Time
+
+# Exemple 3 : Révéler les diagnostics sur le split test holdout scellé
+python training_diagnostics.py --reveal-test
+```
+
+---
+
+### 6. Visualiser les trades et les résultats (`view_results.py`)
+
+Génère les graphiques chandeliers, trades exécutés et courbes d'équité :
+
+```bash
+# Exemple 1 : Voir les 500 dernières barres
+python view_results.py --csv data/binance_BTCUSDT_1m.csv --symbol BTC/USDT --source-tz UTC --bars 500
+
+# Exemple 2 : Visualiser une période spécifique
+python view_results.py --start 2024-01-01 --end 2024-03-01 --no-browser
+
+# Exemple 3 : Visualiser le split de validation
+python view_results.py --split val
 ```
 
 ## Important defaults
